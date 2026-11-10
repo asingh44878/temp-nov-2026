@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nagpur temperatures, 1–9 November 2026</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --page: #eceef3;
+    --paper: #fbfbf8;
+    --ink: #1b2a9b;          /* ballpoint blue */
+    --ink-soft: #55608f;
+    --rule: #dde2ec;         /* faint notebook lines */
+    --hl: rgba(27, 42, 155, 0.08);
+    --cold: #1f5fe0;         /* min dots */
+    --hot: #d7263d;          /* max dots */
+    --font: "Kalam", "Segoe Print", "Bradley Hand", cursive;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: var(--font);
+    padding: 24px 16px 40px;
+  }
+  main { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: clamp(1.5rem, 4vw, 2rem); font-weight: 700; margin: 0 0 2px; line-height: 1.2; }
+  .sub { margin: 0 0 16px; color: var(--ink-soft); font-size: 1.05rem; }
+
+  .sheet {
+    position: relative;
+    background: var(--paper);
+    border: 1px solid #cfd5e2;
+    border-radius: 6px;
+    box-shadow: 0 1px 0 #cfd5e2, 0 8px 24px rgba(27, 42, 155, 0.06);
+  }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  svg text { font-family: var(--font); fill: var(--ink); }
+
+  .rule { stroke: var(--rule); stroke-width: 1; }
+  .major { stroke: var(--ink); stroke-width: 1.6; opacity: 0.3; stroke-linecap: round; }
+  .day-line { stroke: var(--ink); stroke-width: 1; opacity: 0.2; }
+  .range { stroke: var(--ink); stroke-width: 3.2; stroke-linecap: round; transition: stroke-width 0.15s; }
+  .dot { transition: r 0.15s; }
+  .dot.max { fill: var(--hot); }
+  .dot.min { fill: var(--cold); }
+  .hit { fill: transparent; pointer-events: all; cursor: crosshair; outline: none; }
+  .col.active .hit, .col .hit:focus-visible { fill: var(--hl); }
+  .col .hit:focus-visible { stroke: var(--ink); stroke-width: 1.5; stroke-dasharray: 4 3; }
+  .col.active .range { stroke-width: 5; }
+  .col.active .dot { r: 6.5; }
+  .col.active .val { font-weight: 700; }
+  .axis-label { fill: var(--ink-soft) !important; }
+
+  .tip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--paper);
+    border: 1.5px solid var(--ink);
+    border-radius: 4px;
+    padding: 6px 10px;
+    font-size: 0.95rem;
+    line-height: 1.35;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.1s;
+    z-index: 2;
+  }
+  .tip.on { opacity: 1; }
+  .tip b { font-weight: 700; }
+  .tip .d { display: block; margin-bottom: 2px; }
+
+  .src { margin: 14px 2px 0; font-size: 0.9rem; color: var(--ink-soft); }
+  .src a { color: var(--ink); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .range, .dot, .tip { transition: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>Nagpur, 1–9 November 2026</h1>
+  <p class="sub">Daily minimum and maximum temperature, in °C</p>
+
+  <div class="sheet" id="sheet">
+    <svg id="chart" role="group" aria-label="Minimum and maximum temperature in Nagpur for each day from 1 to 9 November 2026"></svg>
+    <div class="tip" id="tip" role="status"></div>
+  </div>
+
+  <p class="src">Source: <a href="https://www.timeanddate.com/weather/india/nagpur/historic">timeanddate.com</a></p>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script>
+  // Daily min / max (°C), from Ngp_Temp_Nov_-_Sheet1.csv. Time columns are not used.
+  const data = [
+    { day: 1, min: 21, max: 30 },
+    { day: 2, min: 21, max: 30 },
+    { day: 3, min: 21, max: 31 },
+    { day: 4, min: 22, max: 31 },
+    { day: 5, min: 21, max: 31 },
+    { day: 6, min: 19, max: 31 },
+    { day: 7, min: 18, max: 32 },
+    { day: 8, min: 18, max: 32 },
+    { day: 9, min: 17, max: 32 }
+  ];
+
+  const Y_MIN = 15, Y_MAX = 35;
+  const sheet = document.getElementById("sheet");
+  const tip = document.getElementById("tip");
+  const svg = d3.select("#chart");
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let firstDraw = true;
+
+  const fmtDate = d => new Date(2026, 10, d).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+
+  function render() {
+    const W = Math.max(300, sheet.clientWidth);
+    const H = Math.round(Math.min(Math.max(W * 1.05, 440), 700));
+    const small = W < 520;
+    const m = { top: 48, right: small ? 14 : 28, bottom: 72, left: small ? 42 : 56 };
+    const fs = small ? 13 : 17;
+
+    svg.attr("viewBox", `0 0 ${W} ${H}`).attr("height", H);
+    svg.selectAll("*").remove();
+
+    const x = d3.scalePoint().domain(data.map(d => d.day)).range([m.left, W - m.right]).padding(0.6);
+    const y = d3.scaleLinear().domain([Y_MIN, Y_MAX]).range([H - m.bottom, m.top]);
+    const step = x(2) - x(1);
+
+    // Notebook ruling: a faint line every degree, heavy ink every 5°
+    svg.append("g").selectAll("line")
+      .data(d3.range(Y_MIN, Y_MAX + 1).filter(t => t % 5 !== 0))
+      .join("line").attr("class", "rule")
+      .attr("x1", m.left).attr("x2", W - m.right)
+      .attr("y1", t => y(t)).attr("y2", t => y(t));
+
+    const majors = d3.range(Y_MIN, Y_MAX + 1, 5);
+    svg.append("g").selectAll("line")
+      .data(majors).join("line").attr("class", "major")
+      .attr("x1", m.left - 6).attr("x2", W - m.right)
+      .attr("y1", t => y(t)).attr("y2", t => y(t));
+
+    svg.append("g").selectAll("text")
+      .data(majors).join("text").attr("class", "axis-label")
+      .attr("x", m.left - 12).attr("y", t => y(t))
+      .attr("text-anchor", "end").attr("dominant-baseline", "middle")
+      .style("font-size", fs + "px")
+      .text(t => t + "°");
+
+    // Day numbers, top and bottom as in the sketch
+    ["top", "bottom"].forEach(pos => {
+      svg.append("g").selectAll("text")
+        .data(data).join("text")
+        .attr("x", d => x(d.day))
+        .attr("y", pos === "top" ? m.top - 18 : H - m.bottom + 28)
+        .attr("text-anchor", "middle")
+        .style("font-size", fs + "px")
+        .text(d => d.day);
+    });
+    svg.append("text").attr("class", "axis-label")
+      .attr("x", (m.left + W - m.right) / 2).attr("y", H - 14)
+      .attr("text-anchor", "middle").style("font-size", fs + "px")
+      .text("November 2026");
+
+    // One column per day
+    const cols = svg.append("g").selectAll("g")
+      .data(data).join("g").attr("class", "col");
+
+    cols.append("rect").attr("class", "hit")
+      .attr("x", d => x(d.day) - step / 2).attr("width", step)
+      .attr("y", m.top - 34).attr("height", (H - m.bottom + 40) - (m.top - 34))
+      .attr("tabindex", 0)
+      .attr("aria-label", d => `${fmtDate(d.day)}: maximum ${d.max} degrees, minimum ${d.min} degrees`);
+
+    cols.append("line").attr("class", "day-line").attr("pointer-events", "none")
+      .attr("x1", d => x(d.day)).attr("x2", d => x(d.day))
+      .attr("y1", y(Y_MAX)).attr("y2", y(Y_MIN));
+
+    const ranges = cols.append("line").attr("class", "range").attr("pointer-events", "none")
+      .attr("x1", d => x(d.day)).attr("x2", d => x(d.day))
+      .attr("y1", d => y(d.max)).attr("y2", d => y(d.min));
+
+    const dots = cols.selectAll("circle")
+      .data(d => [{ d, v: d.max, t: "max" }, { d, v: d.min, t: "min" }])
+      .join("circle").attr("class", p => "dot " + p.t).attr("pointer-events", "none")
+      .attr("cx", p => x(p.d.day)).attr("cy", p => y(p.v)).attr("r", 4.5);
+
+    const labels = cols.selectAll("text.val")
+      .data(d => [{ d, v: d.max }, { d, v: d.min }])
+      .join("text").attr("class", "val").attr("pointer-events", "none")
+      .attr("x", p => x(p.d.day) - 9).attr("y", p => y(p.v))
+      .attr("text-anchor", "end").attr("dominant-baseline", "middle")
+      .style("font-size", fs + "px")
+      .text(p => p.v);
+
+    // Draw the lines in once on first load, like ink going down
+    if (firstDraw && !reduceMotion) {
+      ranges.each(function (d) {
+        const len = y(d.min) - y(d.max);
+        d3.select(this)
+          .attr("stroke-dasharray", len).attr("stroke-dashoffset", len)
+          .transition().delay((d.day - 1) * 80).duration(650).ease(d3.easeCubicOut)
+          .attr("stroke-dashoffset", 0)
+          .on("end", function () { d3.select(this).attr("stroke-dasharray", null).attr("stroke-dashoffset", null); });
+      });
+      [dots, labels].forEach(sel => sel.style("opacity", 0)
+        .transition().delay(p => (p.d.day - 1) * 80 + 450).duration(300).style("opacity", 1));
+    }
+    firstDraw = false;
+
+    // Hover / focus / tap
+    function show(event, d) {
+      cols.classed("active", c => c === d);
+      tip.innerHTML = `<span class="d"><b>${fmtDate(d.day)}</b></span>Max <b>${d.max}°</b><br>Min <b>${d.min}°</b><br>Range <b>${d.max - d.min}°</b>`;
+      tip.classList.add("on");
+      const w = tip.offsetWidth, h = tip.offsetHeight;
+      let left = x(d.day) + step / 2 + 6;
+      if (left + w > W - 4) left = x(d.day) - step / 2 - w - 6;
+      left = Math.max(4, left);
+      const top = Math.min(Math.max(y(d.max) + 28, 4), H - h - 4);
+      tip.style.left = left + "px";
+      tip.style.top = top + "px";
+    }
+    function hide() {
+      cols.classed("active", false);
+      tip.classList.remove("on");
+    }
+    cols.select(".hit")
+      .on("pointerenter", show).on("pointerdown", show)
+      .on("pointerleave", hide)
+      .on("focus", show).on("blur", hide);
+  }
+
+  render();
+  let raf, lastW = sheet.clientWidth;
+  new ResizeObserver(() => {
+    if (sheet.clientWidth === lastW) return; // ignore the initial callback so the draw-in isn't cut short
+    lastW = sheet.clientWidth;
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(render);
+  }).observe(sheet);
+</script>
+</body>
+</html>
